@@ -1,40 +1,62 @@
 #!/usr/bin/env python3
 
 from urllib.request import urlopen
+from urllib.parse import urlencode
 import json
 import csv
 import io
 
-def main():
-    url = "https://statsapi.mlb.com/api/v1/stats?stats=season&group=hitting&season=2024&limit=2000&playerPool=All"
-    keys = ['gamesPlayed', 'groundOuts', 'airOuts', 'runs', 'doubles', 'triples',
-            'homeRuns', 'strikeOuts', 'baseOnBalls', 'intentionalWalks', 'hits',
-            'hitByPitch', 'avg', 'atBats', 'obp', 'slg', 'ops', 'caughtStealing',
-            'stolenBases', 'stolenBasePercentage', 'groundIntoDoublePlay',
-            'numberOfPitches', 'plateAppearances', 'totalBases', 'rbi', 'leftOnBase',
-            'sacBunts', 'sacFlies', 'babip', 'groundOutsToAirouts',
-            'catchersInterference', 'atBatsPerHomeRun']
+def get_stats(params):
+    params = urlencode(params)
+    url = f"https://statsapi.mlb.com/api/v1/stats?{params}"
     resp = urlopen(url)
-    print(f"{resp}")
-    
-    f = io.StringIO()
-    w = csv.DictWriter(f, ['player', 'team']+keys)
-    w.writeheader()
+    return json.load(resp)
 
-    data = json.load(resp)
-    #print(data)
-
+def extract_keys(data):
+    keys = []
     for stats in data['stats']:
         for player in stats['splits']:
-            data = player['stat'] | {
+            for key in player['stat'].keys():
+                if key not in keys:
+                    keys.append(key)
+    keys = ["player","team"] + keys
+    return keys
+
+def get_lines(data, keys):
+    lines = []
+    for stats in data['stats']:
+        for player in stats['splits']:
+            lines.append(player['stat'] | {
                     'player': player['player']['fullName'],
                     'team': player['team']['name'],
-                    }
-            w.writerow(data)
-            #print(player)
+                    })
+    return lines
 
-    print(f.getvalue())
+def write_csv(data, keys, f):
+    w = csv.DictWriter(f, keys)
+    w.writeheader()
+    for line in data:
+        w.writerow(line)
+
+def main(f, group, season, fmt):
+    supported_groups = ["hitting", "pitching", "fielding"]
+    if group not in supported_groups:
+        raise ValueError(f"Unsupported group: '{group}'")
+    
+    supported_fmt = ["csv"]
+    if fmt not in supported_fmt:
+        raise ValueError(f"Unsupported format: '{fmt}'")
+
+    params = {"stats": "season", "group": group, "season": season, "limit": 2000, "playerPool": "All"}
+    data = get_stats(params)
+    keys = extract_keys(data)
+    lines = get_lines(data, keys)
+    if fmt == "csv":
+        write_csv(lines, keys, f)
+
 
 if __name__=="__main__":
-    main()
+    f = io.StringIO()
+    main(f, "pitching", 2024, "csv")
+    print(f.getvalue())
 
