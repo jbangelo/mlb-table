@@ -1,4 +1,5 @@
-use anyhow::Result;
+use std::io::Cursor;
+use anyhow::{bail,Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -158,10 +159,10 @@ fn get_stats<T: for<'a> Deserialize<'a>>(params: &[(&str, &str)]) -> Result<Resp
         .json()?)
 }
 
-fn write_stats<T: Serialize>(stats: &Response<T>) -> Result<()> {
+fn write_stats<T: Serialize>(stats: &Response<T>) -> Result<Vec<u8>> {
     let mut w = csv::WriterBuilder::new()
         .has_headers(false)
-        .from_writer(std::io::stdout().lock());
+        .from_writer(Cursor::new(Vec::new()));
 
     for group in &stats.stats {
         for split in &group.splits {
@@ -173,28 +174,28 @@ fn write_stats<T: Serialize>(stats: &Response<T>) -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(w.into_inner()?.into_inner())
 }
 
-pub fn run(group: &str, season: &str) -> Result<()> {
+pub fn run(group: &str, season: &str) -> Result<String> {
     let params = &[("stats", "season"), ("group", group), ("season", season), ("limit", "2000"), ("playerPool", "All")];
-    match group {
+    let csv = match group {
         "hitting" => {
             let stats: Response<Hitting> = get_stats(params)?;
-            write_stats(&stats)?;
+            write_stats(&stats)?
         },
         "pitching" => {
             let stats: Response<Pitching> = get_stats(params)?;
-            write_stats(&stats)?;
+            write_stats(&stats)?
         },
         /*"hitting" => {
             let stats: Response<hitting> = get_stats(params)?;
-            write_stats(&stats)?;
+            write_stats(&stats)?
         },*/
         _ => {
-            anyhow::bail!("Invalid group value: {}", group);
+            bail!("Invalid group value: {}", group);
         }
-    }
+    };
 
-    Ok(())
+    Ok(String::from_utf8(csv)?)
 }
